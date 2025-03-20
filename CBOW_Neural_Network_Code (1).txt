@@ -1,0 +1,138 @@
+import numpy as np 
+from tensorflow.keras.models import Model 
+from tensorflow.keras.layers import Input, Embedding, Dot, Dense, Flatten 
+from tensorflow.keras.preprocessing.text import Tokenizer 
+from tensorflow.keras.preprocessing.sequence import skipgrams 
+from tensorflow.keras.utils import to_categorical 
+
+# Training and Testing Corpus 
+training_corpus = [ 
+    "the sky is blue", 
+    "the sun is bright", 
+    "we can see the sky", 
+    "the blue sky is beautiful", 
+    "bright sun shines bright" 
+] 
+
+testing_corpus = [ 
+    "the sky is clear", 
+    "bright sun and blue sky", 
+    "we can see bright sun", 
+    "the sky is endless", 
+    "the blue sun shines" 
+] 
+
+# Parameters 
+embedding_dim = 5 
+window_size = 2 
+vocab_size = None 
+
+def preprocess_corpus(corpus): 
+    tokenizer = Tokenizer() 
+    tokenizer.fit_on_texts(corpus) 
+    sequences = tokenizer.texts_to_sequences(corpus) 
+    word_to_index = tokenizer.word_index 
+    index_to_word = {idx: word for word, idx in word_to_index.items()} 
+    global vocab_size 
+    vocab_size = len(word_to_index) + 1 
+    return sequences, word_to_index, index_to_word 
+
+# Generate Skip-grams 
+def generate_skipgrams(sequences, vocab_size, window_size): 
+    skip_grams = [] 
+    for sequence in sequences: 
+        pairs, labels = skipgrams(sequence, vocabulary_size=vocab_size, window_size=window_size) 
+        skip_grams.extend(zip(pairs, labels)) 
+    return skip_grams 
+
+# Preprocessing Training Data 
+train_sequences, word_to_index, index_to_word = preprocess_corpus(training_corpus+testing_corpus) 
+skip_grams = generate_skipgrams(train_sequences, vocab_size, window_size) 
+
+# Model Architecture 
+input_target = Input((1,)) 
+input_context = Input((1,)) 
+embedding = Embedding(input_dim=vocab_size, output_dim=embedding_dim, input_length=1, name="embedding") 
+
+target = embedding(input_target) 
+context = embedding(input_context) 
+
+dot_product = Dot(axes=-1)([target, context]) 
+flatten = Flatten()(dot_product) 
+output = Dense(1, activation="sigmoid")(flatten) 
+
+model = Model(inputs=[input_target, input_context], outputs=output) 
+model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"]) 
+
+# Prepare Data for Training 
+targets, contexts, labels = zip(*[(pair[0], pair[1], label) for pair, label in skip_grams]) 
+targets = np.array(targets, dtype="int32") 
+contexts = np.array(contexts, dtype="int32") 
+labels = np.array(labels, dtype="int32") 
+
+# Train the Model 
+model.fit([targets, contexts], labels, epochs=100, batch_size=128) 
+
+# Testing the Model 
+test_sequences, _, _ = preprocess_corpus(testing_corpus) 
+test_skip_grams = generate_skipgrams(test_sequences, vocab_size, window_size) 
+
+correct_predictions = 0 
+total_predictions = len(test_skip_grams) 
+
+for (target, context), label in test_skip_grams: 
+    prediction = model.predict([np.array([target]), np.array([context])]) 
+    predicted_label = 1 if prediction > 0.5 else 0 
+    if predicted_label == label: 
+        correct_predictions += 1 
+
+testing_accuracy = correct_predictions / total_predictions * 100 
+
+print(f"Vocabulary Size: {vocab_size}") 
+print(f"Testing Accuracy: {testing_accuracy:.2f}%") 
+
+import matplotlib.pyplot as plt 
+import networkx as nx 
+
+def plot_cbows_network(vocab_size, embedding_dim): 
+    # Create a directed graph 
+    G = nx.DiGraph() 
+
+    # Add nodes for the layers 
+    input_layer = [f"Input {i+1}" for i in range(vocab_size)] 
+    hidden_layer = [f"Hidden {i+1}" for i in range(embedding_dim)] 
+    output_layer = [f"Output {i+1}" for i in range(vocab_size)] 
+
+    # Add edges for input to hidden layer 
+    for inp in input_layer: 
+        for hid in hidden_layer: 
+            G.add_edge(inp, hid) 
+
+    # Add edges for hidden to output layer 
+    for hid in hidden_layer: 
+        for out in output_layer: 
+            G.add_edge(hid, out) 
+
+    # Define positions for nodes 
+    pos = {} 
+
+    # Input layer positions 
+    for i, node in enumerate(input_layer): 
+        pos[node] = (0, -i) 
+    # Hidden layer positions 
+    for i, node in enumerate(hidden_layer): 
+        pos[node] = (1, -i * (vocab_size / embedding_dim)) 
+    # Output layer positions 
+    for i, node in enumerate(output_layer): 
+        pos[node] = (2, -i) 
+
+    # Draw the graph 
+    plt.figure(figsize=(12, 8)) 
+    nx.draw(G, pos, with_labels=True, node_size=3000, 
+            node_color='lightblue', font_size=10, font_weight='bold', 
+            edge_color='gray') 
+    plt.title("CBOW Neural Network Structure", fontsize=16) 
+    plt.show() 
+
+# Example usage 
+plot_cbows_network(vocab_size, embedding_dim) 
