@@ -1,0 +1,86 @@
+import numpy as np 
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Define two stored patterns (length 5 each)
+patterns = np.array([
+    [0.2, -0.4, 0.6, -0.8, 1], # First pattern
+    [-0.8, 0.6, -0.4, 0.2, -1] # Second pattern
+])
+
+# Compute the Hebbian weight matrix using the outer product rule
+W_bsb_hebbian = patterns.T @ patterns
+W_bsb_hebbian = W_bsb_hebbian.astype(np.float64)
+
+# Subtract identity matrix scaled by max weight to ensure stability
+W_bsb_hebbian -= np.eye(W_bsb_hebbian.shape[0]) * np.max(W_bsb_hebbian)
+
+# Define the BSB update function
+def bsb_update(x, W, num_iterations=30):
+    """Performs BSB-like updates using tanh activation and computes energy at each step."""
+    def tanh_activation(x):
+        return np.tanh(x)
+
+    def compute_energy(x, W):
+        return -0.5 * x.T @ W @ x
+
+    x_values = [x.copy()]
+    energy_values = [compute_energy(x, W)]
+
+    for _ in range(num_iterations):
+        x = tanh_activation(W @ x)
+        x_values.append(x.copy())
+        energy_values.append(compute_energy(x, W))
+
+    return np.array(x_values), np.array(energy_values)
+
+# Example input (perturbed version of a stored pattern)
+x_test = np.array([0.1, -0.8, 0.6, -0.2, 0.8]) # Slightly noisy version of first pattern
+
+# Perform BSB iterations and compute energy
+bsb_results, energy_results = bsb_update(x_test, W_bsb_hebbian)
+
+# Convert results to DataFrames for visualization
+df_bsb_results = pd.DataFrame(bsb_results, columns=[f"Node_{i+1}" for i in range(5)])
+df_bsb_results.index.name = "Iteration"
+
+df_energy_results = pd.DataFrame(energy_results, columns=["Energy"])
+df_energy_results.index.name = "Iteration"
+
+# Display stored patterns, BSB results, and energy
+print("Stored Patterns (Hebbian Learning):")
+print(pd.DataFrame(patterns, columns=[f"Feature_{i+1}" for i in range(5)]))
+
+print("
+BSB Iterations with Hebbian Weights:")
+print(df_bsb_results)
+
+print("
+Energy Evolution:")
+print(df_energy_results)
+
+# Plot state evolution trajectory
+def plot_state_evolution(df):
+    plt.figure(figsize=(8, 5))
+    for column in df.columns:
+        plt.plot(df.index, df[column], marker='o', linestyle='-', label=column)
+    plt.xlabel("Iteration")
+    plt.ylabel("State Value")
+    plt.title("BSB State Evolution Trajectory")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+# Plot energy evolution
+def plot_energy_evolution(df):
+    plt.figure(figsize=(8, 5))
+    plt.plot(df.index, df["Energy"], marker='o', linestyle='-', color='red')
+    plt.xlabel("Iteration")
+    plt.ylabel("Energy")
+    plt.title("BSB Energy Evolution")
+    plt.grid(True)
+    plt.show()
+
+# Plot the trajectories
+plot_state_evolution(df_bsb_results)
+plot_energy_evolution(df_energy_results)
